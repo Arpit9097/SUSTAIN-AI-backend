@@ -7,35 +7,44 @@ import connectDB from "./config/db.js";
 
 dotenv.config();
 
-connectDB();
-
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
+// ====== PORT (Railway Required) ======
 const PORT = process.env.PORT || 5000;
+
+// ====== ENV ======
 const API_KEY = process.env.GEMINI_API_KEY;
 
-if (!API_KEY) {
-  console.log("API KEY Missing");
-  process.exit(1);
-}
+// ====== DB CONNECT ======
+connectDB()
+  .then(() => console.log("MongoDB Connected"))
+  .catch((err) => console.error("MongoDB Error:", err.message));
+
+// ===== HEALTH CHECK (IMPORTANT FOR RAILWAY) =====
+app.get("/", (req, res) => {
+  res.send("SustainAI Backend Running 🚀");
+});
+
+// ================= USERS =================
 
 app.post("/api/users/check-username", async (req, res) => {
   try {
     const { username } = req.body;
 
-    if (!username) {
+    if (!username)
       return res.status(400).json({ error: "Username required" });
-    }
 
     const user = await User.findOne({ username });
 
     res.json({ exists: !!user });
 
   } catch (error) {
+
     res.status(500).json({ error: error.message });
+
   }
 });
 
@@ -44,15 +53,13 @@ app.post("/api/users/get-email", async (req, res) => {
 
     const { username } = req.body;
 
-    if (!username) {
+    if (!username)
       return res.status(400).json({ error: "Username required" });
-    }
 
     const user = await User.findOne({ username });
 
-    if (!user) {
+    if (!user)
       return res.status(404).json({ error: "User not found" });
-    }
 
     res.json({ email: user.email });
 
@@ -64,7 +71,6 @@ app.post("/api/users/get-email", async (req, res) => {
 });
 
 app.post("/api/users", async (req, res) => {
-
   try {
 
     const { username, email, firebaseUid } = req.body;
@@ -76,18 +82,11 @@ app.post("/api/users", async (req, res) => {
     }
 
     const existingUser = await User.findOne({
-      $or: [
-        { email },
-        { username },
-        { firebaseUid }
-      ]
+      $or: [{ email }, { username }, { firebaseUid }]
     });
 
-    if (existingUser) {
-      return res.status(400).json({
-        error: "User already exists"
-      });
-    }
+    if (existingUser)
+      return res.status(400).json({ error: "User already exists" });
 
     const newUser = new User({
       username,
@@ -101,25 +100,29 @@ app.post("/api/users", async (req, res) => {
 
   } catch (error) {
 
-    res.status(500).json({
-      error: error.message
-    });
+    res.status(500).json({ error: error.message });
 
   }
-
 });
+
+// ================= CHAT =================
 
 app.post("/chat", authenticateUser, async (req, res) => {
 
   try {
 
+    if (!API_KEY) {
+      return res.status(500).json({
+        reply: "Gemini API key missing on server"
+      });
+    }
+
     const { message, scores } = req.body;
 
-    if (!message) {
+    if (!message)
       return res.status(400).json({
         reply: "Message required"
       });
-    }
 
     const prompt = `
 You are a sustainability AI assistant.
@@ -147,9 +150,7 @@ Give concise sustainability advice.
         body: JSON.stringify({
           contents: [
             {
-              parts: [
-                { text: prompt }
-              ]
+              parts: [{ text: prompt }]
             }
           ]
         })
@@ -166,6 +167,8 @@ Give concise sustainability advice.
 
   } catch (error) {
 
+    console.error("Chat Error:", error);
+
     res.status(500).json({
       reply: "Server Error",
       error: error.message
@@ -175,11 +178,25 @@ Give concise sustainability advice.
 
 });
 
-// Secure logout endpoint — verifies token before confirming logout
+// ===== LOGOUT =====
+
 app.post("/api/logout", authenticateUser, (req, res) => {
-  // Token is valid (authenticateUser passed), safe to logout
-  return res.status(200).json({ message: "Logged out successfully" });
+  res.status(200).json({
+    message: "Logged out successfully"
+  });
 });
+
+// ===== GLOBAL ERROR SAFETY =====
+
+process.on("uncaughtException", err => {
+  console.error("Uncaught Exception:", err);
+});
+
+process.on("unhandledRejection", err => {
+  console.error("Unhandled Rejection:", err);
+});
+
+// ===== START SERVER =====
 
 app.listen(PORT, () => {
 
